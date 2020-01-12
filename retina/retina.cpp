@@ -92,7 +92,6 @@ public:
 		return img(myROI);
 	}
 
-
 	test_results run(std::vector<c_img> known, std::vector<c_img> test) {
 		auto img_clusters = std::map<std::string, std::map<std::string, std::vector<c_img>>>();
 
@@ -205,68 +204,73 @@ public:
 		auto matches12 = std::vector<std::vector<cv::DMatch>>();
 		auto matches21 = std::vector<std::vector<cv::DMatch>>();
 
-		Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
-		matcher->knnMatch(descriptors1, descriptors2, matches12, 2);
-		matcher->knnMatch(descriptors1, descriptors2, matches21, 2);
+		int k = 2;
+		int match_count = 0;
+		std::vector<DMatch> better_matches;
+		if (keyPoints1.size() >= k && keyPoints2.size() >= k) {
+			Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
+			matcher->knnMatch(descriptors1, descriptors2, matches12, k);
+			matcher->knnMatch(descriptors1, descriptors2, matches21, k);
+
+
+			double max_dist = 0; double min_dist = 100;
+			for (int i = 0; i < descriptors1.rows; i++)
+			{
+				double dist = matches12[i].data()->distance;
+				if (dist < min_dist)
+					min_dist = dist;
+				if (dist > max_dist)
+					max_dist = dist;
+			}
+
+			//printf("-- Max dist : %f \n", max_dist);
+			//printf("-- Min dist : %f \n", min_dist);
+
+			//cout << "Matches1-2:" << matches12.size() << endl;
+			//cout << "Matches2-1:" << matches21.size() << endl;
+
+			double ratio = 0.9;
+
+			std::vector<DMatch> good_matches1, good_matches2;
+			for (int i = 0; i < matches12.size(); i++)
+			{
+				if (matches12[i].size() >= 2) {
+					if (matches12[i][0].distance < 2 * min_dist)
+						good_matches1.push_back(matches12[i][0]);
+				}
+			}
+
+			for (int i = 0; i < matches21.size(); i++)
+			{
+				if (matches21[i].size() >= 2) {
+					if (matches21[i][0].distance < 2 * min_dist)
+						good_matches2.push_back(matches21[i][0]);
+				}
+			}
+
+			//cout << "Good matches1:" << good_matches1.size() << endl;
+			///cout << "Good matches2:" << good_matches2.size() << endl;
+			
+			for (int i = 0; i < good_matches1.size(); i++)
+			{
+				for (int j = 0; j < good_matches2.size(); j++)
+				{
+					if (good_matches1[i].queryIdx == good_matches2[j].trainIdx && good_matches2[j].queryIdx == good_matches1[i].trainIdx)
+					{
+						better_matches.push_back(good_matches1[i]);
+						match_count++;
+						break;
+					}
+				}
+			}
+
+		}
 
 		BFMatcher bfmatcher(NORM_L2, true);
 		vector<DMatch> bf_matches;
 		bfmatcher.match(descriptors1, descriptors2, bf_matches);
 		
-		double max_dist = 0; double min_dist = 100;
-		for (int i = 0; i < descriptors1.rows; i++)
-		{
-			double dist = matches12[i].data()->distance;
-			if (dist < min_dist)
-				min_dist = dist;
-			if (dist > max_dist)
-				max_dist = dist;
-		}
-
-		//printf("-- Max dist : %f \n", max_dist);
-		//printf("-- Min dist : %f \n", min_dist);
-
-		//cout << "Matches1-2:" << matches12.size() << endl;
-		//cout << "Matches2-1:" << matches21.size() << endl;
-
-		double ratio = 0.9;
-
-		std::vector<DMatch> good_matches1, good_matches2;
-		for (int i = 0; i < matches12.size(); i++)
-		{
-			if (matches12[i].size() >= 2) {
-				if (matches12[i][0].distance < 2* min_dist)
-					good_matches1.push_back(matches12[i][0]);
-			}
-		}
-
-		for (int i = 0; i < matches21.size(); i++)
-		{
-			if (matches21[i].size() >= 2) {
-				if (matches21[i][0].distance < 2* min_dist)
-					good_matches2.push_back(matches21[i][0]);
-			}
-		}
-
-		//cout << "Good matches1:" << good_matches1.size() << endl;
-		///cout << "Good matches2:" << good_matches2.size() << endl;
-
-
-		std::vector<DMatch> better_matches;
-		int match_count = 0;
-		for (int i = 0; i < good_matches1.size(); i++)
-		{
-			for (int j = 0; j < good_matches2.size(); j++)
-			{
-				if (good_matches1[i].queryIdx == good_matches2[j].trainIdx && good_matches2[j].queryIdx == good_matches1[i].trainIdx)
-				{
-					better_matches.push_back(good_matches1[i]);
-					match_count++;
-					break;
-				}
-			}
-		}
-
+		
 		if (match_count > 3) {
 			Mat output;
 			drawMatches(img1, keyPoints1, img2, keyPoints2, better_matches, output);
